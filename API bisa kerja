@@ -1,0 +1,441 @@
+```cpp
+// =============================================
+// ROBOT PEMADAM LILIN
+// TANPA LIBRARY NEWPING
+// =============================================
+
+#include <Servo.h>
+
+// =============================================
+// INISIALISASI MOTOR SERVO
+// =============================================
+
+#define RODA1 4
+#define RODA2 5
+
+Servo Roda1;
+Servo Roda2;
+
+
+// =============================================
+// PIN KIPAS DAN BUZZER
+// =============================================
+
+#define KIPAS  6
+#define BUZZER 3
+
+bool keadaan;
+
+
+// =============================================
+// KALIBRASI MOTOR DAN SENSOR
+// =============================================
+
+// Waktu gerakan / belok
+int kecepatan = 600;
+
+// Nilai berhenti continuous rotation servo
+int rodakanan = 93;
+int rodakiri  = 95;
+
+// Toleransi jarak hindar
+int setpoin = 7;
+
+// Nilai sensor garis / lintasan
+int lintasan = 200;
+
+// Nilai toleransi sensor api
+int api = 500;
+
+
+// =============================================
+// PIN HC-SR04 SENSOR KIRI
+// =============================================
+
+#define TRIG1 9
+#define ECHO1 10
+
+
+// =============================================
+// PIN HC-SR04 SENSOR DEPAN
+// =============================================
+
+#define TRIG2 11
+#define ECHO2 12
+
+
+// =============================================
+// PIN HC-SR04 SENSOR KANAN
+// =============================================
+
+#define TRIG3 7
+#define ECHO3 8
+
+
+// =============================================
+// FUNGSI MEMBACA JARAK HC-SR04
+// =============================================
+
+int bacaJarak(int trig, int echo) {
+
+  // Memastikan trigger LOW
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+
+  // Mengirim sinyal ultrasonic
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+
+  // Membaca durasi pantulan
+  long durasi = pulseIn(echo, HIGH, 30000);
+
+  // Jika tidak ada pantulan
+  if (durasi == 0) {
+    return 100;
+  }
+
+  // Mengubah waktu menjadi cm
+  int jarak = durasi / 58;
+
+  return jarak;
+}
+
+
+// =============================================
+// SETUP
+// =============================================
+
+void setup() {
+
+  Serial.begin(9600);
+
+
+  // Motor servo
+  Roda1.attach(RODA1);
+  Roda2.attach(RODA2);
+
+
+  // HC-SR04 kiri
+  pinMode(TRIG1, OUTPUT);
+  pinMode(ECHO1, INPUT);
+
+  // HC-SR04 depan
+  pinMode(TRIG2, OUTPUT);
+  pinMode(ECHO2, INPUT);
+
+  // HC-SR04 kanan
+  pinMode(TRIG3, OUTPUT);
+  pinMode(ECHO3, INPUT);
+
+
+  // Kipas dan buzzer
+  pinMode(KIPAS, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+
+  // Kipas mati
+  digitalWrite(KIPAS, HIGH);
+
+  // Buzzer mati
+  digitalWrite(BUZZER, LOW);
+
+
+  // Status robot
+  keadaan = false;
+
+
+  // Robot berhenti
+  diam(3000);
+}
+
+
+// =============================================
+// LOOP UTAMA
+// =============================================
+
+void loop() {
+
+  // ===========================================
+  // MEMBACA 3 SENSOR ULTRASONIK
+  // ===========================================
+
+  int jarak1 = bacaJarak(TRIG1, ECHO1); // kiri
+  int jarak2 = bacaJarak(TRIG2, ECHO2); // depan
+  int jarak3 = bacaJarak(TRIG3, ECHO3); // kanan
+
+
+  // ===========================================
+  // MEMBACA SENSOR
+  // ===========================================
+
+  int base = analogRead(A0);
+
+  // Sensor api A1-A5
+  int api1 = analogRead(A1);
+  int api2 = analogRead(A2);
+  int api3 = analogRead(A3);
+  int api4 = analogRead(A4);
+  int api5 = analogRead(A5);
+
+
+  // ===========================================
+  // MENAMPILKAN DATA SENSOR
+  // ===========================================
+
+  Serial.print("Kiri: ");
+  Serial.print(jarak1);
+
+  Serial.print(" | Depan: ");
+  Serial.print(jarak2);
+
+  Serial.print(" | Kanan: ");
+  Serial.print(jarak3);
+
+  Serial.print(" | Api1: ");
+  Serial.print(api1);
+
+  Serial.print(" | Api2: ");
+  Serial.print(api2);
+
+  Serial.print(" | Api3: ");
+  Serial.print(api3);
+
+  Serial.print(" | Api4: ");
+  Serial.print(api4);
+
+  Serial.print(" | Api5: ");
+  Serial.print(api5);
+
+  Serial.print(" | Base: ");
+  Serial.println(base);
+
+
+  // ===========================================
+  // PREMIS 1
+  // API TERDETEKSI DAN ROBOT SUDAH DEKAT
+  // ===========================================
+
+  if (
+    (api2 > api || api3 > api || api4 > api) &&
+    (jarak2 > 1 && jarak2 < 15)
+  ) {
+
+    // Robot berhenti
+    diam(500);
+
+    // Buzzer menyala
+    digitalWrite(BUZZER, HIGH);
+
+    // Kipas menyala
+    digitalWrite(KIPAS, LOW);
+
+
+    // Meniup sambil bergerak kanan-kiri
+    tiup(kecepatan);
+
+
+    // Kipas mati
+    digitalWrite(KIPAS, HIGH);
+
+    // Buzzer mati
+    digitalWrite(BUZZER, LOW);
+
+
+    // Menandakan api sudah dipadamkan
+    keadaan = true;
+
+    diam(1000);
+  }
+
+
+  // ===========================================
+  // PREMIS 2
+  // API BELUM TERDETEKSI / BELUM DIPADAMKAN
+  // ===========================================
+
+  else {
+
+    // Buzzer mati
+    digitalWrite(BUZZER, LOW);
+
+    // Kipas mati
+    digitalWrite(KIPAS, HIGH);
+
+
+    // =========================================
+    // JIKA ROBOT SUDAH MEMADAMKAN API
+    // =========================================
+
+    if (base > lintasan && keadaan == true) {
+
+      maju();
+      delay(kecepatan);
+
+      // Berhenti
+      diam(1000);
+    }
+
+
+    // =========================================
+    // SENSOR KIRI MENDETEKSI HALANGAN
+    // ROBOT BELOK KANAN
+    // =========================================
+
+    else if (jarak1 < setpoin && jarak1 > 1) {
+
+      kanan();
+      delay(50);
+    }
+
+
+    // =========================================
+    // SENSOR KANAN MENDETEKSI HALANGAN
+    // ROBOT BELOK KIRI
+    // =========================================
+
+    else if (jarak3 < setpoin && jarak3 > 1) {
+
+      kiri();
+      delay(50);
+    }
+
+
+    // =========================================
+    // SENSOR DEPAN MENDETEKSI HALANGAN
+    // =========================================
+
+    else if (jarak2 < setpoin && jarak2 > 1) {
+
+      // Jika jarak kiri lebih kecil
+      // robot berputar ke kanan
+      if (jarak1 < jarak3) {
+
+        balik_kanan();
+        delay(kecepatan);
+      }
+
+      // Jika jarak kanan lebih kecil
+      // robot berputar ke kiri
+      else {
+
+        balik_kiri();
+        delay(kecepatan);
+      }
+    }
+
+
+    // =========================================
+    // TIDAK ADA HALANGAN
+    // =========================================
+
+    else {
+
+      maju();
+      delay(100);
+    }
+  }
+}
+
+
+// =============================================
+// FUNGSI GERAK ROBOT
+// =============================================
+
+
+// MAJU
+void maju() {
+
+  Roda1.write(180);
+  Roda2.write(0);
+}
+
+
+// MUNDUR
+void mundur() {
+
+  Roda1.write(0);
+  Roda2.write(180);
+}
+
+
+// PUTAR / BALIK KIRI
+void balik_kiri() {
+
+  Roda1.write(0);
+  Roda2.write(0);
+}
+
+
+// PUTAR / BALIK KANAN
+void balik_kanan() {
+
+  Roda1.write(180);
+  Roda2.write(180);
+}
+
+
+// BELOK KANAN
+void kanan() {
+
+  Roda1.write(180);
+  Roda2.write(rodakiri);
+}
+
+
+// BELOK KIRI
+void kiri() {
+
+  Roda1.write(rodakanan);
+  Roda2.write(0);
+}
+
+
+// BERHENTI
+void diam(int waktu) {
+
+  Roda1.write(rodakanan);
+  Roda2.write(rodakiri);
+
+  delay(waktu);
+}
+
+
+// =============================================
+// FUNGSI MENIUP API
+// =============================================
+
+void tiup(int waktu) {
+
+  // Robot bergerak kanan
+  balik_kanan();
+  delay(waktu / 4);
+
+  diam(100);
+
+
+  // Robot bergerak kiri
+  balik_kiri();
+  delay(waktu / 2);
+
+  diam(100);
+
+
+  // Robot bergerak kanan
+  balik_kanan();
+  delay(waktu / 2);
+
+  diam(100);
+
+
+  // Robot bergerak kiri
+  balik_kiri();
+  delay(waktu / 4);
+
+  diam(100);
+
+
+  // Berhenti
+  diam(100);
+}
+```
