@@ -1,0 +1,173 @@
+// ROBOT PEMADAM LILIN v4
+// Motor DC + L298N, 3 ultrasonik, 1 sensor api digital
+
+// ---------- PIN (sesuai papan tulis) ----------
+#define KIPAS       4
+#define SENSOR_API  2
+#define TRIG_KANAN  A4
+#define ECHO_KANAN  A5
+#define TRIG_TENGAH A2
+#define ECHO_TENGAH A3
+#define TRIG_KIRI   A0
+#define ECHO_KIRI   A1
+#define IN1 10
+#define IN2 9
+#define IN3 6
+#define IN4 5
+#define ENA 11
+#define ENB 3
+#define LED 13
+#define PB1 7   // tombol START
+#define PB2 8   // tombol STOP
+
+// ---------- KALIBRASI ----------
+#define API_AKTIF       LOW    // sensor api digital: biasanya LOW = ada api
+#define KIPAS_AKTIF     HIGH   // ganti LOW kalau kipas nyala terus
+#define MOTOR_KIRI_BALIK  false // true kalau roda kiri muter terbalik
+#define MOTOR_KANAN_BALIK false // true kalau roda kanan muter terbalik
+
+#define KEC          200   // kecepatan normal (0-255)
+#define KEC_BELOK    180
+#define KEC_DEKATI   140   // pelan saat mendekati api
+
+#define JARAK_TIUP    15   // cm, meniup lilin
+#define JARAK_HALANG  15   // cm, tembok depan
+#define JARAK_SAMPING 10   // cm, tembok samping
+#define LAMA_TIUP   5000   // ms
+
+bool jalan = false;
+
+// ---------- MOTOR ----------
+void motor(int in1, int in2, int en, int v) {
+  if (v > 0) {
+    digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+    analogWrite(en, v);
+  } else if (v < 0) {
+    digitalWrite(in1, LOW); digitalWrite(in2, HIGH);
+    analogWrite(en, -v);
+  } else {
+    digitalWrite(in1, LOW); digitalWrite(in2, LOW);
+    analogWrite(en, 0);
+  }
+}
+
+// kiri & kanan: -255 (mundur) sampai 255 (maju)
+void gerak(int kiri, int kanan) {
+  if (MOTOR_KIRI_BALIK)  kiri  = -kiri;
+  if (MOTOR_KANAN_BALIK) kanan = -kanan;
+  motor(IN1, IN2, ENA, kiri);
+  motor(IN3, IN4, ENB, kanan);
+}
+
+void berhenti() { gerak(0, 0); }
+
+// ---------- SENSOR ----------
+int bacaJarak(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long d = pulseIn(echo, HIGH, 6000);
+  if (d == 0) return 100;
+  return d / 58;
+}
+
+bool adaApi() {
+  if (digitalRead(SENSOR_API) == API_AKTIF) {
+    delay(5);
+    return digitalRead(SENSOR_API) == API_AKTIF;  // cek ulang biar tidak salah baca
+  }
+  return false;
+}
+
+// ---------- PADAMKAN ----------
+bool padamkan() {
+  berhenti();
+  for (int i = 0; i < 3; i++) {          // coba maksimal 3 kali tiup
+    digitalWrite(KIPAS, KIPAS_AKTIF);
+    delay(LAMA_TIUP);
+    digitalWrite(KIPAS, !KIPAS_AKTIF);
+    delay(500);
+    if (!adaApi()) return true;          // api mati
+  }
+  return false;
+}
+
+void selesai() {
+  berhenti();
+  for (int i = 0; i < 6; i++) {          // LED kedip tanda sukses
+    digitalWrite(LED, HIGH); delay(200);
+    digitalWrite(LED, LOW);  delay(200);
+  }
+  jalan = false;                         // tekan PB1 untuk mulai lagi
+}
+
+// ---------- SETUP ----------
+void setup() {
+  Serial.begin(9600);
+  pinMode(KIPAS, OUTPUT);
+  digitalWrite(KIPAS, !KIPAS_AKTIF);
+  pinMode(SENSOR_API, INPUT);
+  pinMode(LED, OUTPUT);
+  pinMode(PB1, INPUT_PULLUP);
+  pinMode(PB2, INPUT_PULLUP);
+
+  pinMode(TRIG_KIRI, OUTPUT);   pinMode(ECHO_KIRI, INPUT);
+  pinMode(TRIG_TENGAH, OUTPUT); pinMode(ECHO_TENGAH, INPUT);
+  pinMode(TRIG_KANAN, OUTPUT);  pinMode(ECHO_KANAN, INPUT);
+
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT); pinMode(ENB, OUTPUT);
+  berhenti();
+}
+
+// ---------- LOOP ----------
+void loop() {
+  if (digitalRead(PB1) == LOW) jalan = true;
+  if (digitalRead(PB2) == LOW) { jalan = false; berhenti(); }
+
+  if (!jalan) {
+    berhenti();
+    digitalWrite(LED, LOW);
+    return;
+  }
+
+  int kiri   = bacaJarak(TRIG_KIRI,   ECHO_KIRI);
+  int tengah = bacaJarak(TRIG_TENGAH, ECHO_TENGAH);
+  int kanan  = bacaJarak(TRIG_KANAN,  ECHO_KANAN);
+
+  Serial.print("api=");   Serial.print(digitalRead(SENSOR_API));
+  Serial.print(" kiri="); Serial.print(kiri);
+  Serial.print(" tgh=");  Serial.print(tengah);
+  Serial.print(" kanan=");Serial.println(kanan);
+
+  // 1. ADA API
+  if (adaApi()) {
+    digitalWrite(LED, HIGH);
+    if (tengah <= JARAK_TIUP) {
+      if (padamkan()) selesai();
+    } else {
+      gerak(KEC_DEKATI, KEC_DEKATI);     // mendekati api pelan-pelan
+    }
+    return;
+  }
+
+  // 2. TIDAK ADA API -> keliling
+  digitalWrite(LED, LOW);
+
+  if (tengah < JARAK_HALANG) {           // tembok depan
+    gerak(-KEC, -KEC);
+    delay(200);
+    if (kiri > kanan) gerak(-KEC_BELOK, KEC_BELOK);   // belok ke kiri
+    else              gerak(KEC_BELOK, -KEC_BELOK);   // belok ke kanan
+    delay(300);
+  } else if (kiri < JARAK_SAMPING) {     // terlalu dekat kiri -> geser kanan
+    gerak(KEC, KEC / 3);
+  } else if (kanan < JARAK_SAMPING) {    // terlalu dekat kanan -> geser kiri
+    gerak(KEC / 3, KEC);
+  } else {
+    gerak(KEC, KEC);                     // jalan lurus
+  }
+}
