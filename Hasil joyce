@@ -1,0 +1,233 @@
+int kipas = 4;
+int api = 2;
+
+
+int trigKanan = A4;
+int echoKanan = A5;
+
+
+int trigTengah = A2;
+int echoTengah = A3;
+
+
+int trigKiri = A0;
+int echoKiri = A1;
+
+
+int m1 = 10;  // Motor kiri
+int m2 = 9;
+int m3 = 6;   // Motor kanan
+int m4 = 5;
+
+
+int en1 = 11;
+int en2 = 3;
+
+
+long durasi;
+int kanan, tengah, kiri;
+
+
+const int kecepatan = 90;
+
+
+void berhenti() {
+  digitalWrite(m1, LOW);
+  digitalWrite(m2, LOW);
+  digitalWrite(m3, LOW);
+  digitalWrite(m4, LOW);
+}
+
+
+void maju() {
+  // Arah motor disesuaikan dengan polaritas berbeda
+  digitalWrite(m1, LOW);
+  digitalWrite(m2, HIGH);
+
+
+  digitalWrite(m3, HIGH);
+  digitalWrite(m4, LOW);
+}
+
+
+void mundur() {
+  digitalWrite(m1, HIGH);
+  digitalWrite(m2, LOW);
+
+
+  digitalWrite(m3, HIGH);
+  digitalWrite(m4, LOW);
+}
+
+
+void belokKanan() {
+  // Putar ke kanan
+  digitalWrite(m1, LOW);
+  digitalWrite(m2, HIGH);
+
+
+  digitalWrite(m3, HIGH);
+  digitalWrite(m4, LOW);
+}
+
+
+void belokKiri() {
+  // Putar ke kiri
+  digitalWrite(m1, HIGH);
+  digitalWrite(m2, LOW);
+
+
+  digitalWrite(m3, LOW);
+  digitalWrite(m4, HIGH);
+}
+
+
+int bacaJarak(int trig, int echo) {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+
+
+  long waktu = pulseIn(echo, HIGH, 18000);
+
+
+  if (waktu == 0) {
+    return 0; // Tidak ada pantulan
+  }
+
+
+  return waktu * 0.034 / 2;
+}
+
+
+void setup() {
+  pinMode(kipas, OUTPUT);
+  pinMode(api, INPUT);
+
+
+  pinMode(trigKanan, OUTPUT);
+  pinMode(echoKanan, INPUT);
+
+
+  pinMode(trigTengah, OUTPUT);
+  pinMode(echoTengah, INPUT);
+
+
+  pinMode(trigKiri, OUTPUT);
+  pinMode(echoKiri, INPUT);
+
+
+  pinMode(m1, OUTPUT);
+  pinMode(m2, OUTPUT);
+  pinMode(m3, OUTPUT);
+  pinMode(m4, OUTPUT);
+
+
+  pinMode(en1, OUTPUT);
+  pinMode(en2, OUTPUT);
+
+
+  analogWrite(en1, kecepatan);
+  analogWrite(en2, kecepatan);
+
+
+  digitalWrite(kipas, HIGH);
+  Serial.begin(9600);
+
+
+  // GERAK AWAL: MAJU KURANG LEBIH 10 CM
+  maju();
+  delay(500);  // Kalibrasi untuk jarak sekitar 10 cm
+  berhenti();
+  delay(500);
+}
+
+
+void loop() {
+  kanan = bacaJarak(trigKanan, echoKanan);
+  delay(25);
+
+
+  tengah = bacaJarak(trigTengah, echoTengah);
+  delay(25);
+
+
+  kiri = bacaJarak(trigKiri, echoKiri);
+  delay(25);
+
+
+  bool apiTerdeteksi = (digitalRead(api) == LOW);
+
+
+  Serial.print("Kiri: ");
+  Serial.print(kiri);
+  Serial.print(" | Depan: ");
+  Serial.print(tengah);
+  Serial.print(" | Kanan: ");
+  Serial.print(kanan);
+  Serial.print(" | Api: ");
+  Serial.println(apiTerdeteksi ? "TERDETEKSI" : "TIDAK");
+
+
+  if (apiTerdeteksi) {
+    // Api terdeteksi: maju mendekati api
+    if (tengah > 15) {
+      digitalWrite(kipas, HIGH);
+      maju();
+    }
+    // Jarak api 1-15 cm
+    else if (tengah > 0 && tengah <= 15) {
+      berhenti();
+      digitalWrite(kipas, LOW);
+    }
+    // Jarak depan tidak terbaca
+    else {
+      berhenti();
+      digitalWrite(kipas, HIGH);
+    }
+  } else {
+    digitalWrite(kipas, HIGH);
+
+
+    // Halangan di depan
+    if (tengah > 0 && tengah <= 20) {
+      berhenti();
+      delay(100);
+
+
+      if (kanan > kiri && kanan > 0) {
+        belokKanan();
+      } else if (kiri > 0) {
+        belokKiri();
+      } else {
+        mundur();
+      }
+
+
+      delay(300);
+      berhenti();
+      delay(100);
+    }
+    // Terlalu dekat dinding kiri
+    else if (kiri > 0 && kiri <= 15) {
+      belokKanan();
+      delay(200);
+      berhenti();
+    }
+    // Terlalu dekat dinding kanan
+    else if (kanan > 0 && kanan <= 15) {
+      belokKiri();
+      delay(200);
+      berhenti();
+    }
+    // Cari api dengan bergerak maju
+    else {
+      maju();
+    }
+  }
+
+
+  delay(50);
+}
